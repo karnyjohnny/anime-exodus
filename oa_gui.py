@@ -507,10 +507,10 @@ class ConverterApp:
 
         self._hook_rate_events()
         dpg.set_primary_window(self.w["main"], True)
-        dpg.set_viewport_resize_callback(self._on_resize)
+        dpg.set_viewport_resize_callback(lambda *a: self._on_resize(*a))
 
         # tick UI: opróżnia kolejkę jobów + animacje
-        dpg.set_frame_callback(1, lambda: self._arm_tick())
+        dpg.set_frame_callback(1, lambda *a: self._arm_tick())
 
     # ------------------------------------------------------------- OKNO GŁÓWNE
     def _build_main_window(self) -> None:
@@ -536,12 +536,12 @@ class ConverterApp:
                 dpg.add_button(
                     label="Instrukcja  (co i dlaczego)",
                     width=230,
-                    callback=lambda: self._show("win_help"),
+                    callback=lambda *a: self._show("win_help"),
                 )
                 dpg.add_button(
                     label="Import do MAL / AniList",
                     width=210,
-                    callback=lambda: self._show("win_import"),
+                    callback=lambda *a: self._show("win_import"),
                 )
             dpg.add_separator()
             dpg.add_spacer(height=4)
@@ -557,13 +557,13 @@ class ConverterApp:
                             label="Wybierz plik CSV…",
                             width=320,
                             height=44,
-                            callback=self._open_csv_dialog,
+                            callback=lambda *a: self._open_csv_dialog(*a),
                         )
                         self.w["btn_reload_csv"] = dpg.add_button(
                             label="Wczytaj ponownie",
                             width=180,
                             height=44,
-                            callback=self._on_load_csv,
+                            callback=lambda *a: self._on_load_csv(*a),
                             enabled=False,
                         )
                     dpg.bind_item_theme(self.w["btn_pick_csv"], self.w["th_accent"])
@@ -586,10 +586,10 @@ class ConverterApp:
                                 hint="ścieżka do pliku CSV wyeksportowanego z ogladajanime.pl",
                                 width=-1,
                                 on_enter=True,
-                                callback=self._on_csv_enter,
+                                callback=lambda *a: self._on_csv_enter(*a),
                             )
                             dpg.add_button(
-                                label="Wczytaj", width=110, callback=self._on_load_csv
+                                label="Wczytaj", width=110, callback=lambda *a: self._on_load_csv(*a)
                             )
                     self.w["csv_status"] = dpg.add_text(
                         "Nie wczytano jeszcze żadnego pliku.", color=MUTED, wrap=-1
@@ -611,14 +611,14 @@ class ConverterApp:
                             label="Rozpocznij analizę",
                             width=210,
                             height=34,
-                            callback=self._on_start_search,
+                            callback=lambda *a: self._on_start_search(*a),
                             enabled=False,
                         )
                         self.w["btn_cancel"] = dpg.add_button(
                             label="Anuluj",
                             width=110,
                             height=34,
-                            callback=self._on_cancel,
+                            callback=lambda *a: self._on_cancel(*a),
                             enabled=False,
                         )
                         self.w["spinner"] = dpg.add_loading_indicator(
@@ -667,14 +667,14 @@ class ConverterApp:
                             label="Weryfikacja niepewnych (0)",
                             width=260,
                             height=34,
-                            callback=self._open_review,
+                            callback=lambda *a: self._open_review(*a),
                             enabled=False,
                         )
                         self.w["btn_xml"] = dpg.add_button(
                             label="Generuj XML",
                             width=170,
                             height=34,
-                            callback=self._on_generate_click,
+                            callback=lambda *a: self._on_generate_click(*a),
                             enabled=False,
                         )
                         self.w["xml_path"] = dpg.add_input_text(
@@ -683,7 +683,7 @@ class ConverterApp:
                         dpg.add_button(
                             label="Zmień…",
                             width=90,
-                            callback=lambda: self._show("dlg_save_xml"),
+                            callback=lambda *a: self._show("dlg_save_xml"),
                         )
                     dpg.bind_item_theme(self.w["btn_review"], self.w["th_violet"])
                     dpg.bind_item_theme(self.w["btn_xml"], self.w["th_green"])
@@ -774,13 +774,13 @@ class ConverterApp:
                     label="Generuj XML teraz",
                     width=190,
                     height=32,
-                    callback=self._on_generate_click,
+                    callback=lambda *a: self._on_generate_click(*a),
                 )
                 dpg.add_button(
                     label="Zamknij",
                     width=110,
                     height=32,
-                    callback=lambda: dpg.configure_item("win_review", show=False),
+                    callback=lambda *a: dpg.configure_item("win_review", show=False),
                 )
                 self.w["review_done_msg"] = dpg.add_text("", color=GREEN)
 
@@ -880,7 +880,7 @@ class ConverterApp:
             dpg.add_button(
                 label="Zamknij",
                 width=110,
-                callback=lambda: dpg.configure_item("win_help", show=False),
+                callback=lambda *a: dpg.configure_item("win_help", show=False),
             )
 
     def _help_h1(self, text: str) -> None:
@@ -962,7 +962,7 @@ class ConverterApp:
             dpg.add_button(
                 label="Zamknij",
                 width=110,
-                callback=lambda: dpg.configure_item("win_import", show=False),
+                callback=lambda *a: dpg.configure_item("win_import", show=False),
             )
 
     def _url_row(self, url: str) -> None:
@@ -972,13 +972,13 @@ class ConverterApp:
                 label="Kopiuj",
                 width=90,
                 small=True,
-                callback=lambda: self._copy_url(url),
+                callback=lambda *a: self._copy_url(url),
             )
             dpg.add_button(
                 label="Otwórz w przeglądarce",
                 width=190,
                 small=True,
-                callback=lambda: self._open_url(url),
+                callback=lambda *a: self._open_url(url),
             )
         dpg.set_item_user_data(u, url)
         dpg.add_spacer(height=2)
@@ -1003,7 +1003,7 @@ class ConverterApp:
                     label="OK",
                     width=110,
                     height=30,
-                    callback=lambda: dpg.configure_item("win_modal", show=False),
+                    callback=lambda *a: dpg.configure_item("win_modal", show=False),
                 )
                 self.w["modal_btn2"] = dpg.add_button(
                     label="", width=210, height=30, show=False, callback=None
@@ -1017,8 +1017,8 @@ class ConverterApp:
             modal=True,
             width=860,
             height=640,
-            callback=self._on_csv_picked,
-            cancel_callback=lambda: None,
+            callback=lambda *a: self._on_csv_picked(*a),
+            cancel_callback=lambda *a: None,
         ):
             dpg.add_file_extension(".csv", color=GREEN)
             dpg.add_file_extension(".txt", color=MUTED)
@@ -1029,7 +1029,7 @@ class ConverterApp:
             modal=True,
             width=860,
             height=640,
-            callback=self._on_xml_path_picked,
+            callback=lambda *a: self._on_xml_path_picked(*a),
             default_filename="mal_import.xml",
         ):
             dpg.add_file_extension(".xml", color=GREEN)
@@ -1074,7 +1074,7 @@ class ConverterApp:
     def _arm_tick(self) -> None:
         self._tick()
 
-    def _tick(self) -> None:
+    def _tick(self, *args) -> None:
         try:
             # 1) joby z kolejki (wątek roboczy -> UI)
             deadline = time.perf_counter() + 0.02
@@ -1145,7 +1145,7 @@ class ConverterApp:
         dpg.configure_item("dlg_open_csv", default_path=self._default_dir())
         self._show("dlg_open_csv")
 
-    def _on_csv_enter(self, sender, app_data, user_data=None) -> None:
+    def _on_csv_enter(self, sender=None, app_data=None, user_data=None) -> None:
         self._on_load_csv()
 
     def _on_csv_picked(self, sender, app_data, user_data=None) -> None:
@@ -1279,7 +1279,7 @@ class ConverterApp:
                 "Uruchomić analizę ponownie?",
                 AMBER,
                 second_button="Tak, uruchom ponownie",
-                second_cb=lambda: (
+                second_cb=lambda *a: (
                     dpg.configure_item("win_modal", show=False),
                     self._start_search_now(),
                 ),
@@ -1314,7 +1314,7 @@ class ConverterApp:
     def _worker_run(self) -> None:
         try:
             result = self.converter.search_all(
-                progress_callback=self._on_progress,
+                progress_callback=lambda *a: self._on_progress(*a),
                 cancel_event=self.cancel_event,
             )
             self.post(lambda: self._on_search_done(result))
@@ -1565,20 +1565,20 @@ class ConverterApp:
                     items=labels,
                     default_value=labels[0],
                     width=640,
-                    callback=lambda s, a, u: self._on_sugg_combo(s, a, u),
+                    callback=lambda *a: self._on_sugg_combo(*a),
                 )
                 with dpg.group(horizontal=True, horizontal_spacing=8):
                     dpg.add_button(
                         label="Zapisz wybór",
                         width=140,
                         height=30,
-                        callback=lambda s, a, u: self._on_save_choice(s, a, u),
+                        callback=lambda *a: self._on_save_choice(*a),
                     )
                     dpg.add_button(
                         label="Odrzuć wpis",
                         width=130,
                         height=30,
-                        callback=lambda s, a, u: self._on_reject(s, a, u),
+                        callback=lambda *a: self._on_reject(*a),
                     )
                 detail = dpg.add_text(
                     "", color=MUTED, wrap=getattr(self, "review_wrap", 1000)
@@ -1595,7 +1595,7 @@ class ConverterApp:
                         label="Zapisz ręcznie MAL ID",
                         width=200,
                         height=30,
-                        callback=lambda s, a, u: self._on_save_manual(s, a, u),
+                        callback=lambda *a: self._on_save_manual(*a),
                     )
                     dpg.add_text("(gdy AniList nie zwróciło idMal)", color=MUTED)
             else:
@@ -1617,13 +1617,13 @@ class ConverterApp:
                         label="Zapisz ręcznie MAL ID",
                         width=200,
                         height=30,
-                        callback=lambda s, a, u: self._on_save_manual(s, a, u),
+                        callback=lambda *a: self._on_save_manual(*a),
                     )
                     dpg.add_button(
                         label="Odrzuć wpis",
                         width=130,
                         height=30,
-                        callback=lambda s, a, u: self._on_reject(s, a, u),
+                        callback=lambda *a: self._on_reject(*a),
                     )
             dpg.add_separator()
             dpg.add_spacer(height=2)
@@ -1856,7 +1856,7 @@ class ConverterApp:
             "(szczegóły w oknie „Import do MAL / AniList”).",
             GREEN,
             second_button="Otwórz okno importu",
-            second_cb=lambda: (
+            second_cb=lambda *a: (
                 dpg.configure_item("win_modal", show=False),
                 self._show("win_import"),
             ),
@@ -1908,7 +1908,7 @@ class ConverterApp:
         self.layout_main()
         self.layout_info_windows()
 
-    def _on_resize(self, sender=None, app_data=None, user_data=None) -> None:
+    def _on_resize(self, *args) -> None:
         self.layout_all()
         try:
             if dpg.get_item_configuration("win_review").get("show"):
@@ -1926,7 +1926,7 @@ class ConverterApp:
             pass
 
         # Rejestrujemy callback dla zmiany rozmiaru okna
-        dpg.set_viewport_resize_callback(self._on_resize)
+        dpg.set_viewport_resize_callback(lambda *a: self._on_resize(*a))
 
         # Przez pierwszych ~30 klatek wymuszamy przeliczenie układu co klatkę:
         # system potrafi nadać oknu realne wymiary (maximize / DPI) z opóźnieniem.
