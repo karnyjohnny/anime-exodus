@@ -1148,7 +1148,23 @@ class ConverterApp:
     def _on_csv_enter(self, sender=None, app_data=None, user_data=None) -> None:
         self._on_load_csv()
 
-    def _on_csv_picked(self, sender, app_data, user_data=None) -> None:
+    def _dialog_app_data(self, tag: str, args) -> dict:
+        # Najpierw app_data z callbacku (jesli DPG raczył je przekazać)...
+        for cand in args:
+            if isinstance(cand, dict):
+                return cand
+        # ...a jeśli nie (build Nuitka bywa oszczędny), czytamy wybór
+        # bezpośrednio z okna dialogu - działa zawsze.
+        try:
+            info = dpg.get_file_dialog_info(tag)
+            if isinstance(info, dict):
+                return info
+        except Exception:  # noqa: BLE001
+            pass
+        return {}
+
+    def _on_csv_picked(self, *args) -> None:
+        app_data = self._dialog_app_data("dlg_open_csv", args)
         path = app_data.get("file_path_name") if isinstance(app_data, dict) else None
         if not path:
             selections = (app_data or {}).get("selections") or {}
@@ -1548,6 +1564,7 @@ class ConverterApp:
 
     def _add_review_row(self, entry, suggs) -> None:
         row_tag = f"rev_row_{entry.local_id}"
+        rowref: list = []   # closure łapie wiersz bez polegania na sender/app_data
         with dpg.group(tag=row_tag, parent="review_list"):
             with dpg.group(horizontal=True, horizontal_spacing=10):
                 t = dpg.add_text(f"#{entry.local_id}  {entry.title}", color=TEXT)
@@ -1565,20 +1582,20 @@ class ConverterApp:
                     items=labels,
                     default_value=labels[0],
                     width=640,
-                    callback=lambda *a: self._on_sugg_combo(*a),
+                    callback=lambda *a: self._on_sugg_combo(*a, row=rowref[0] if rowref else None),
                 )
                 with dpg.group(horizontal=True, horizontal_spacing=8):
                     dpg.add_button(
                         label="Zapisz wybór",
                         width=140,
                         height=30,
-                        callback=lambda *a: self._on_save_choice(*a),
+                        callback=lambda *a: self._on_save_choice(row=rowref[0] if rowref else None),
                     )
                     dpg.add_button(
                         label="Odrzuć wpis",
                         width=130,
                         height=30,
-                        callback=lambda *a: self._on_reject(*a),
+                        callback=lambda *a: self._on_reject(row=rowref[0] if rowref else None),
                     )
                 detail = dpg.add_text(
                     "", color=MUTED, wrap=getattr(self, "review_wrap", 1000)
@@ -1595,7 +1612,7 @@ class ConverterApp:
                         label="Zapisz ręcznie MAL ID",
                         width=200,
                         height=30,
-                        callback=lambda *a: self._on_save_manual(*a),
+                        callback=lambda *a: self._on_save_manual(row=rowref[0] if rowref else None),
                     )
                     dpg.add_text("(gdy AniList nie zwróciło idMal)", color=MUTED)
             else:
@@ -1617,13 +1634,13 @@ class ConverterApp:
                         label="Zapisz ręcznie MAL ID",
                         width=200,
                         height=30,
-                        callback=lambda *a: self._on_save_manual(*a),
+                        callback=lambda *a: self._on_save_manual(row=rowref[0] if rowref else None),
                     )
                     dpg.add_button(
                         label="Odrzuć wpis",
                         width=130,
                         height=30,
-                        callback=lambda *a: self._on_reject(*a),
+                        callback=lambda *a: self._on_reject(row=rowref[0] if rowref else None),
                     )
             dpg.add_separator()
             dpg.add_spacer(height=2)
@@ -1642,6 +1659,7 @@ class ConverterApp:
         for child in dpg.get_item_children(row_tag, slot=1) or []:
             for sub in [child] + (dpg.get_item_children(child, slot=1) or []):
                 dpg.set_item_user_data(sub, row_tag)
+        rowref.append(row)
         self.review_rows[entry.local_id] = row
         if suggs:
             self._fill_detail(row, suggs[0])
@@ -1675,12 +1693,15 @@ class ConverterApp:
         parts.append(f"pewność: {sugg.confidence:.1f}%")
         dpg.configure_item(row["detail"], default_value="   •   ".join(parts))
 
-    def _on_sugg_combo(self, sender, app_data, user_data=None) -> None:
-        row = self._row_of(sender)
-        if not row or not isinstance(app_data, str):
+    def _on_sugg_combo(self, sender=None, app_data=None, user_data=None, row=None) -> None:
+        row = row or self._row_of(sender)
+        if not row:
+            return
+        selected = app_data if isinstance(app_data, str) else dpg.get_value(row["combo"])
+        if not isinstance(selected, str):
             return
         for sugg in row["suggs"]:
-            if self._sugg_label(sugg) == app_data:
+            if self._sugg_label(sugg) == selected:
                 self._fill_detail(row, sugg)
                 break
 
@@ -1701,8 +1722,8 @@ class ConverterApp:
         self.review_remaining = max(0, self.review_remaining - 1)
         self._update_review_counter()
 
-    def _on_save_choice(self, sender, app_data, user_data=None) -> None:
-        row = self._row_of(sender)
+    def _on_save_choice(self, sender=None, app_data=None, user_data=None, row=None) -> None:
+        row = row or self._row_of(sender)
         if not row:
             return
         sugg = self._selected_sugg(row)
@@ -1734,8 +1755,8 @@ class ConverterApp:
             self.w["btn_xml"], enabled=len(self.converter.confirmed_matches) > 0
         )
 
-    def _on_save_manual(self, sender, app_data, user_data=None) -> None:
-        row = self._row_of(sender)
+    def _on_save_manual(self, sender=None, app_data=None, user_data=None, row=None) -> None:
+        row = row or self._row_of(sender)
         if not row:
             return
         mal_id = int(dpg.get_value(row["mal_in"]) or 0)
@@ -1765,8 +1786,8 @@ class ConverterApp:
             self.w["btn_xml"], enabled=len(self.converter.confirmed_matches) > 0
         )
 
-    def _on_reject(self, sender, app_data, user_data=None) -> None:
-        row = self._row_of(sender)
+    def _on_reject(self, sender=None, app_data=None, user_data=None, row=None) -> None:
+        row = row or self._row_of(sender)
         if not row:
             return
         removed = self.converter.reject_entry(row["entry"].local_id)
@@ -1804,7 +1825,8 @@ class ConverterApp:
             return
         self._show("dlg_save_xml")
 
-    def _on_xml_path_picked(self, sender, app_data, user_data=None) -> None:
+    def _on_xml_path_picked(self, *args) -> None:
+        app_data = self._dialog_app_data("dlg_save_xml", args)
         path = app_data.get("file_path_name") if isinstance(app_data, dict) else None
         if not path:
             selections = (app_data or {}).get("selections") or {}
