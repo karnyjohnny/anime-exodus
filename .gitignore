@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+*.build/
+nuitka_cache/
+
+# cache konwertera
+anilist_search_cache.json
+*.err.txt
+*.out.txt
+
+# środowiska / edytory
+.vscode/
+.idea/
+.DS_Store
+
+# artefakty lokalne
+_dev/shots/
+_dev/oa_converter.py
+_dev/tmp_*.json
+_dev/out_mal_import.xml
+_dev/sample_lista.csv
+# moje własne
+pyproject.toml
+pyrightconfig.json
+OpenConsole.exe

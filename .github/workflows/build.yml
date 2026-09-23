@@ -1,0 +1,99 @@
+name: build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: Windows-x64
+            mode: onefile
+          - os: ubuntu-latest
+            artifact: Linux-x64
+            mode: onefile
+          - os: macos-latest
+            artifact: macOS-arm64
+            mode: app
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Zaleznosci projektu
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build (Nuitka-Action)
+        uses: Nuitka/Nuitka-Action@main
+        with:
+          script-name: oa_gui.py
+          mode: ${{ matrix.mode }}
+          output-dir: dist
+          assume-yes-for-downloads: true
+          include-package-data: certifi
+          windows-console-mode: disable
+          windows-icon-from-ico: assets/icon.ico
+          linux-icon: assets/icon.png
+          macos-app-icon: assets/icon.png
+          macos-app-mode: gui
+          onefile-tempdir-spec: "%CACHE_DIR%/AnimeExodus/%VERSION%"
+          company-name: gupad-upa
+          product-name: Anime Exodus
+          file-description: Konwerter listy ogladajanime.pl do MyAnimeList i AniList
+          copyright: Copyright 2026 gupad-upa
+          file-version: 1.1.0.0
+          product-version: 1.1
+          force-stdout-spec: "{PROGRAM_BASE}.out.txt"
+          force-stderr-spec: "{PROGRAM_BASE}.err.txt"
+
+      - name: Spakowanie artefaktu
+        shell: bash
+        run: |
+          mkdir -p stage
+          case "$RUNNER_OS" in
+            Windows) cp "dist/oa_gui.exe" "stage/AnimeExodus-Windows-x64.exe" ;;
+            Linux)   cp "dist/oa_gui.bin" "stage/AnimeExodus-Linux-x64.bin" ;;
+            macOS)   (cd dist && zip -qr ../stage/AnimeExodus-macOS-arm64.zip oa_gui.app) ;;
+            *) echo "nieznany OS: $RUNNER_OS"; exit 1 ;;
+          esac
+          ls -la stage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnimeExodus-${{ matrix.artifact }}
+          path: stage/
+
+  release:
+    name: Wydanie (tag)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Lista plikow
+        run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
