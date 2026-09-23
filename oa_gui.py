@@ -34,6 +34,7 @@ Uwagi techniczne (DearPyGui 2.x):
 
 from __future__ import annotations
 
+import ctypes
 import os
 import queue
 import sys
@@ -42,6 +43,7 @@ import time
 import traceback
 import webbrowser
 from pathlib import Path
+import contextlib
 
 try:
     import dearpygui.dearpygui as dpg
@@ -57,6 +59,15 @@ except ImportError as exc:  # pragma: no cover
         "Brak pliku oa_converter.py w tym samym katalogu.\n"
         "Skopiuj wcześniejszą klasę OaToMalConverter do pliku oa_converter.py."
     ) from exc
+
+# ---------------------------------------------------------------- DPI (Cross-platform)
+# Obsługa High DPI tylko dla Windowsa (na macOS/Linux DearPyGui robi to natywnie)
+if sys.platform == "win32":
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        with contextlib.suppress(Exception):
+            ctypes.windll.user32.SetProcessDpiAware()
 
 APP_NAME = "ANIME EXODUS"
 APP_VERSION = "1.1"
@@ -175,6 +186,19 @@ class ConverterApp:
         self.w = {}
         self.review_rows: dict[int, dict] = {}
         self.review_remaining = 0
+
+    # fixy
+    def _get_viewport_size(self) -> tuple[int, int]:
+        """Pobiera realny rozmiar viewportu z bezpiecznym fallbackiem (Win/Linux/macOS)."""
+        cw = dpg.get_viewport_client_width() or dpg.get_viewport_width()
+        ch = dpg.get_viewport_client_height() or dpg.get_viewport_height()
+
+        # Domyślny, bezpieczny rozmiar dla małych ekranów jeśli OS jeszcze nie przekazał wymiarów
+        if not cw or cw <= 0:
+            cw = 1200
+        if not ch or ch <= 0:
+            ch = 700
+        return cw, ch
 
     # ------------------------------------------------------------------ UI post
     def post(self, fn) -> None:
@@ -1766,22 +1790,44 @@ class ConverterApp:
     # ---------------------------------------------------------------- LAYOUT
     def layout_main(self) -> None:
         """Dopasowuje kolumny okna głównego do realnego rozmiaru viewportu."""
-        try:
-            cw = dpg.get_viewport_client_width() or 1600
-            ch = dpg.get_viewport_client_height() or 900
-        except Exception:  # noqa: BLE001
-            cw, ch = 1600, 900
+        cw, ch = self._get_viewport_size()
+
         log_w = 430 if cw > 1250 else 320
         self.log_wrap = log_w - 26
         left_w = max(420, cw - log_w - 12 - 28 - 6)
         self.left_wrap = left_w - 40
         body_h = max(300, ch - 118)
+
         dpg.configure_item("main_left", width=left_w, height=body_h)
         for key in ("csv_status", "xml_status", "confirmed_line", "prog_current"):
             item = self.w.get(key)
             if item and dpg.does_item_exist(item):
                 dpg.configure_item(item, wrap=self.left_wrap)
         dpg.configure_item("log_child", width=log_w, height=body_h)
+
+    def layout_info_windows(self) -> None:
+        """Ustawia okna informacyjne zależnie od realnego rozmiaru viewportu."""
+        cw, ch = self._get_viewport_size()
+
+        h_w = min(860, max(560, int(cw * 0.46)))
+        i_w = min(820, max(520, int(cw * 0.44)))
+        height = max(420, ch - 130)
+
+        dpg.configure_item("win_help", width=h_w, height=height, pos=(28, 66))
+        dpg.configure_item(
+            "win_import",
+            width=i_w,
+            height=height,
+            pos=(max(h_w + 60, cw - i_w - 28), 66),
+        )
+
+        for tag, width in (("win_help", h_w - 60), ("win_import", i_w - 60)):
+            for child in dpg.get_item_children(tag, slot=1) or []:
+                info = dpg.get_item_info(child)
+                if info.get("type") == "mvText":
+                    cur = dpg.get_item_configuration(child).get("wrap", -1)
+                    if cur not in (None, -1):
+                        dpg.configure_item(child, wrap=width)
 
     def layout_all(self) -> None:
         self.layout_main()
@@ -1792,41 +1838,23 @@ class ConverterApp:
         try:
             if dpg.get_item_configuration("win_review").get("show"):
                 self._place_review()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
-
-    def layout_info_windows(self) -> None:
-        """Ustawia okna informacyjne zależnie od realnego rozmiaru viewportu."""
-        try:
-            cw = dpg.get_viewport_client_width() or 1600
-            ch = dpg.get_viewport_client_height() or 900
-        except Exception:  # noqa: BLE001
-            cw, ch = 1600, 900
-        h_w = min(860, max(560, int(cw * 0.46)))
-        i_w = min(820, max(520, int(cw * 0.44)))
-        height = max(420, ch - 130)
-        dpg.configure_item("win_help", width=h_w, height=height, pos=(28, 66))
-        dpg.configure_item(
-            "win_import",
-            width=i_w,
-            height=height,
-            pos=(max(h_w + 60, cw - i_w - 28), 66),
-        )
-        # teksty pomocnicze zawijają się do szerokości okna
-        for tag, width in (("win_help", h_w - 60), ("win_import", i_w - 60)):
-            for child in dpg.get_item_children(tag, slot=1) or []:
-                info = dpg.get_item_info(child)
-                if info.get("type") == "mvText":
-                    cur = dpg.get_item_configuration(child).get("wrap", -1)
-                    if cur not in (None, -1):
-                        dpg.configure_item(child, wrap=width)
 
     # -------------------------------------------------------------------- RUN
     def run(self) -> None:
         dpg.setup_dearpygui()
-        dpg.maximize_viewport()
         dpg.show_viewport()
+        dpg.maximize_viewport()
+
+        # Rejestrujemy callback dla zmiany rozmiaru okna
+        dpg.set_viewport_resize_callback(self._on_resize)
+
+        # KLUCZOWA POPRAWKA: Przelicz układ tuż przed pętlą ORAZ w 1. klatce renderingu.
+        # klatka 1 daje pewność, że OS (Windows/Linux/macOS) zdążył nadać oknu realne wymiary.
         self.layout_all()
+        dpg.set_frame_callback(1, self.layout_all)
+
         self.log("Aplikacja gotowa. Wybierz plik CSV, żeby zacząć.", CYAN)
         dpg.start_dearpygui()
         dpg.destroy_context()
