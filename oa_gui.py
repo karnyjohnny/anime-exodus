@@ -178,6 +178,10 @@ class ConverterApp:
         self._pulse = 0.0
 
         self._last_csv_dir: str | None = None
+        self._compact: bool | None = None
+        self._fonted: list = []
+        self._force_relayout = 0
+        self._last_size: tuple | None = None
         self.font_reg: str | None = None
         self.font_bold: str | None = None
         self.font_big: str | None = None
@@ -372,10 +376,15 @@ class ConverterApp:
         bold = _find_font(BOLD_FONTS)
         with dpg.font_registry():
             if reg:
+                # zestaw normalny + kompaktowy (male ekrany / wysokie DPI)
                 self.font_reg = dpg.add_font(reg, 17, tag="font_reg")
                 self.font_big = dpg.add_font(bold or reg, 26, tag="font_big")
                 self.font_bold = dpg.add_font(bold or reg, 17, tag="font_bold")
                 self.font_small = dpg.add_font(reg, 14, tag="font_small")
+                self.font_reg_c = dpg.add_font(reg, 14, tag="font_reg_c")
+                self.font_big_c = dpg.add_font(bold or reg, 20, tag="font_big_c")
+                self.font_bold_c = dpg.add_font(bold or reg, 14, tag="font_bold_c")
+                self.font_small_c = dpg.add_font(reg, 12, tag="font_small_c")
             else:
                 self.log(
                     "Nie znaleziono czcionki systemowej - używam wbudowanej "
@@ -384,6 +393,53 @@ class ConverterApp:
                 )
         if self.font_reg:
             dpg.bind_font(self.font_reg)
+
+    # -- fonty: rejestr ról, żeby móc przełączać gęstość UI w locie ----------
+    def _bindf(self, item, role: str) -> None:
+        self._fonted.append((item, role))
+        font = self._font_for(role)
+        if font:
+            dpg.bind_item_font(item, font)
+
+    def _font_for(self, role: str):
+        if role == "big":
+            return self.font_big_c if self._compact else self.font_big
+        if role == "bold":
+            return self.font_bold_c if self._compact else self.font_bold
+        if role == "small":
+            return self.font_small_c if self._compact else self.font_small
+        return self.font_reg_c if self._compact else self.font_reg
+
+    def _apply_density(self, cw: int, ch: int) -> None:
+        # Przełącza UI między trybem normalnym a kompaktowym (małe ekrany).
+        compact = bool(cw < 1400 or ch < 820)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        if not self.font_reg:
+            return
+        dpg.bind_font(self._font_for("reg"))
+        for item, role in self._fonted:
+            if dpg.does_item_exist(item):
+                dpg.bind_item_font(item, self._font_for(role))
+        card_w, card_h = (148, 78) if compact else (168, 90)
+        for tag in getattr(self, "_card_tags", []):
+            if dpg.does_item_exist(tag):
+                dpg.configure_item(tag, width=card_w, height=card_h)
+        sizes = {
+            "btn_pick_csv": 36 if compact else 44,
+            "btn_reload_csv": 36 if compact else 44,
+            "btn_start": 30 if compact else 34,
+            "btn_cancel": 30 if compact else 34,
+            "btn_review": 30 if compact else 34,
+            "btn_xml": 30 if compact else 34,
+        }
+        for key, height in sizes.items():
+            tag = self.w.get(key)
+            if tag and dpg.does_item_exist(tag):
+                dpg.configure_item(tag, height=height)
+        if dpg.does_item_exist(self.w["progress"]):
+            dpg.configure_item(self.w["progress"], height=24 if compact else 30)
 
     # ------------------------------------------------------------------- BUDOWA
     def _hook_rate_events(self) -> None:
@@ -471,7 +527,7 @@ class ConverterApp:
             with dpg.group(horizontal=True, horizontal_spacing=14):
                 title = dpg.add_text("OA → MAL", color=ACCENT)
                 if self.font_big:
-                    dpg.bind_item_font(title, self.font_big)
+                    self._bindf(title, "big")
                 sub = dpg.add_text(
                     "konwerter listy ogladajanime.pl → MyAnimeList / AniList",
                     color=MUTED,
@@ -645,20 +701,21 @@ class ConverterApp:
                     self.w["log_child"] = _lc
                     hdr = dpg.add_text("Dziennik", color=ACCENT)
                     if self.font_bold:
-                        dpg.bind_item_font(hdr, self.font_bold)
+                        self._bindf(hdr, "bold")
                     dpg.add_spacer(height=2)
 
     def _section(self, number: str, title: str) -> None:
         with dpg.group(horizontal=True, horizontal_spacing=10):
             chip = dpg.add_text(number, color=ACCENT)
             if self.font_big:
-                dpg.bind_item_font(chip, self.font_big)
+                self._bindf(chip, "big")
             t = dpg.add_text(title, color=TEXT)
             if self.font_bold:
-                dpg.bind_item_font(t, self.font_bold)
+                self._bindf(t, "bold")
         dpg.add_spacer(height=4)
 
     def _build_stat_cards(self, parent) -> None:
+        self._card_tags = []
         cards = [
             ("card_auto", "dopasowane auto", GREEN),
             ("card_review", "do weryfikacji", AMBER),
@@ -678,10 +735,11 @@ class ConverterApp:
                 dpg.bind_item_theme(tag, self.w["th_card"])
                 val = dpg.add_text("—", color=color)
                 if self.font_big:
-                    dpg.bind_item_font(val, self.font_big)
+                    self._card_tags.append(tag)
+                    self._bindf(val, "big")
                 lbl = dpg.add_text(label, color=MUTED)
                 if self.font_small:
-                    dpg.bind_item_font(lbl, self.font_small)
+                    self._bindf(lbl, "small")
             self.w[tag] = f"{tag}_val"
             # zapamiętaj tag textu wartości
             dpg.set_item_user_data(tag, val)
@@ -700,7 +758,7 @@ class ConverterApp:
             with dpg.group(horizontal=True, horizontal_spacing=12):
                 t = dpg.add_text("Niepewne dopasowania", color=ACCENT)
                 if self.font_big:
-                    dpg.bind_item_font(t, self.font_big)
+                    self._bindf(t, "big")
                 self.w["review_left"] = dpg.add_text("", color=MUTED)
             dpg.add_text(
                 "Wybierz propozycję z listy i kliknij „Zapisz wybór”, "
@@ -828,14 +886,14 @@ class ConverterApp:
     def _help_h1(self, text: str) -> None:
         t = dpg.add_text(text, color=ACCENT)
         if self.font_big:
-            dpg.bind_item_font(t, self.font_big)
+            self._bindf(t, "big")
         dpg.add_spacer(height=2)
 
     def _help_h2(self, text: str) -> None:
         dpg.add_spacer(height=6)
         t = dpg.add_text(text, color=CYAN)
         if self.font_bold:
-            dpg.bind_item_font(t, self.font_bold)
+            self._bindf(t, "bold")
         dpg.add_spacer(height=2)
 
     def _help_p(self, text: str) -> None:
@@ -1031,7 +1089,24 @@ class ConverterApp:
                     traceback.print_exc()
                 if time.perf_counter() > deadline:
                     break
-            # 2) animacja progressa (pulsujący gradient niebieski -> fiolet)
+            # 2) auto-heal layoutu: system potrafi nadać oknu realne wymiary
+            #    z opóźnieniem (maximize, DPI), więc co klatkę sprawdzamy
+            #    rozmiar i przeliczamy układ TYLKO przy zmianie (+ wymuszone
+            #    pierwsze klatki po starcie).
+            try:
+                cw, ch = self._get_viewport_size()
+                if (cw, ch) != self._last_size or self._force_relayout > 0:
+                    if self._force_relayout > 0:
+                        self._force_relayout -= 1
+                    self._last_size = (cw, ch)
+                    self._apply_density(cw, ch)
+                    self.layout_all()
+                    if dpg.get_item_configuration("win_review").get("show"):
+                        self._place_review()
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+            # 3) animacja progressa (pulsujący gradient niebieski -> fiolet)
             if self.searching:
                 self._pulse += 0.045
                 t = (self._pulse % 2.0) / 2.0
@@ -1477,7 +1552,7 @@ class ConverterApp:
             with dpg.group(horizontal=True, horizontal_spacing=10):
                 t = dpg.add_text(f"#{entry.local_id}  {entry.title}", color=TEXT)
                 if self.font_bold:
-                    dpg.bind_item_font(t, self.font_bold)
+                    self._bindf(t, "bold")
                 rating = "-" if entry.rating is None else f"{entry.rating:g}"
                 dpg.add_text(
                     f"[{entry.status_pl} · ocena {rating} · "
@@ -1792,7 +1867,7 @@ class ConverterApp:
         """Dopasowuje kolumny okna głównego do realnego rozmiaru viewportu."""
         cw, ch = self._get_viewport_size()
 
-        log_w = 430 if cw > 1250 else 320
+        log_w = 430 if cw > 1450 else (360 if cw > 1250 else 300)
         self.log_wrap = log_w - 26
         left_w = max(420, cw - log_w - 12 - 28 - 6)
         self.left_wrap = left_w - 40
@@ -1844,16 +1919,22 @@ class ConverterApp:
     # -------------------------------------------------------------------- RUN
     def run(self) -> None:
         dpg.setup_dearpygui()
-        dpg.show_viewport()
-        dpg.maximize_viewport()
+        dpg.show_viewport(maximized=True)
+        try:
+            dpg.maximize_viewport()
+        except Exception:
+            pass
 
         # Rejestrujemy callback dla zmiany rozmiaru okna
         dpg.set_viewport_resize_callback(self._on_resize)
 
-        # KLUCZOWA POPRAWKA: Przelicz układ tuż przed pętlą ORAZ w 1. klatce renderingu.
-        # klatka 1 daje pewność, że OS (Windows/Linux/macOS) zdążył nadać oknu realne wymiary.
+        # Przez pierwszych ~30 klatek wymuszamy przeliczenie układu co klatkę:
+        # system potrafi nadać oknu realne wymiary (maximize / DPI) z opóźnieniem.
+        # UWAGA: nic nie rejestruj pod set_frame_callback(1, ...) - ten slot
+        # należy do ticka (patrz build()), inaczej kolejka jobów UI umiera
+        # (pusty dziennik, martwy progress).
+        self._force_relayout = 30
         self.layout_all()
-        dpg.set_frame_callback(1, self.layout_all)
 
         self.log("Aplikacja gotowa. Wybierz plik CSV, żeby zacząć.", CYAN)
         dpg.start_dearpygui()
