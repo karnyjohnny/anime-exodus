@@ -37,7 +37,7 @@ jobs:
       - name: Zaleznosci projektu
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt imageio
 
       - name: Build (Nuitka-Action)
         uses: Nuitka/Nuitka-Action@main
